@@ -5,7 +5,7 @@ Wildlife detection and species classification inference tools combining MegaDete
 ## Installation
 
 ```bash
-pip install git+https://github.com/awc-admin/awc_inference.git
+pip install git+https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference.git
 ```
 
 ## Usage
@@ -35,6 +35,6 @@ for result in results:
 
 ## License
 
-This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](LICENSE) (CC BY-NC 4.0).
+This project is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](LICENSE) (CC BY-NC-SA 4.0).
 
-**Non-commercial use only.**
+**Non-commercial use only. Derivative works must use the same license.**

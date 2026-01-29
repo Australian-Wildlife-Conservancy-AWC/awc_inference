@@ -7,7 +7,7 @@ name = "awc_helpers"
 version = "0.1.0"
 description = "Australian Wildlife Conservancy's Wildlife detection and species classification inference tools"
 readme = "README.md"
-license = "LicenseRef-CC-BY-NC-4.0"
+license = "LicenseRef-CC-BY-NC-SA-4.0"
 requires-python = ">=3.9"
 authors = [
     { name = "Quan Tran" }
