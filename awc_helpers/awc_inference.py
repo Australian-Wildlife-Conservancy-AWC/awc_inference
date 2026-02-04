@@ -1,5 +1,7 @@
 
-"""Wildlife species detection and classification inference module.
+"""
+Author: Quan Tran (Australian Wildlife Conservancy)
+Wildlife species detection and classification inference module.
 
 This module provides classes and functions for running inference pipelines
 that combine MegaDetector-based animal detection with species classification
