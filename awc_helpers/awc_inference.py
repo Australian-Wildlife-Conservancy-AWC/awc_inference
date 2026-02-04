@@ -125,7 +125,6 @@ class SpeciesClasInference:
         model: The loaded classification model.
         label_names: List of class label names.
         clas_threshold: Minimum confidence threshold for predictions.
-        pred_topn: Number of top predictions to return per image.
         prob_round: Decimal places to round probabilities.
         use_fp16: Whether to use FP16 mixed precision inference.
         resize_size: Target size for image resizing before inference.
@@ -144,7 +143,6 @@ class SpeciesClasInference:
                  classifier_path: str,
                  classifier_base: str,
                  label_names: List[str] = None,
-                 pred_topn: int = 1,
                  prob_round: int = 4,
                  clas_threshold: float = 0.5,
                  resize_size: int = 300,
@@ -168,7 +166,6 @@ class SpeciesClasInference:
         self.model.eval()
         
         self.clas_threshold = clas_threshold
-        self.pred_topn=pred_topn
         self.prob_round=prob_round
         self.use_fp16=use_fp16 and self.device.type=='cuda'
         self.resize_size=resize_size
@@ -198,7 +195,7 @@ class SpeciesClasInference:
             img = source.convert('RGB') if source.mode != 'RGB' else source
             return crop_image(img, bbox_norm, square_crop=True)
     
-    def _predict(self, input_tensor: torch.Tensor) -> torch.Tensor:
+    def _predict(self, input_tensor: torch.Tensor, pred_topn: int) -> torch.Tensor:
         """
         Run classification model on input tensor.
         
@@ -220,7 +217,7 @@ class SpeciesClasInference:
             # Softmax in fp32 for numerical stability
             probs = torch.nn.functional.softmax(logits.float(), dim=1)
 
-            top_probs, top_indices = torch.topk(probs, k=self.pred_topn, dim=1)
+            top_probs, top_indices = torch.topk(probs, k=pred_topn, dim=1)
             return (top_probs.cpu().numpy().round(self.prob_round),
                     top_indices.cpu().numpy())    
 
@@ -255,6 +252,7 @@ class SpeciesClasInference:
     def predict_batch(
         self,
         inputs: List[Union[Tuple[str, float, Tuple[float, float, float, float]], Tuple[Image.Image, str, float, Tuple[float, float, float, float]]]],
+        pred_topn: int = 1,
         batch_size: int = 1,
     ) -> List[Tuple]:
         """
@@ -263,7 +261,6 @@ class SpeciesClasInference:
         Args:
             inputs: List of (img_path, bbox_confidence, bbox) tuples, or (PIL Image, id, bbox_confidence, bbox) tuples for streaming 
             pred_topn: Number of top predictions to return
-            prob_round: Decimal places to round probabilities
             batch_size: Number of images to process at once
             
         Returns:
@@ -297,7 +294,7 @@ class SpeciesClasInference:
             
             # Stack and run inference
             batch_tensor = torch.cat(batch_tensors, dim=0)
-            top_probs, top_indices = self._predict(batch_tensor)
+            top_probs, top_indices = self._predict(batch_tensor, pred_topn=pred_topn)
             
             for i, (identifier, bbox_conf, bbox) in enumerate(batch_metadata):
                 result = self._format_output(
@@ -338,7 +335,6 @@ class DetectAndClassify:
                  classifier_base: str = 'tf_efficientnet_b5.ns_jft_in1k',
                  detection_threshold: float = 0.1,
                  clas_threshold: float = 0.5,
-                 pred_topn: int = 1,
                  resize_size: int = 300,
                  force_cpu: bool = False,
                  skip_clas_errors: bool = True):
@@ -352,7 +348,6 @@ class DetectAndClassify:
             classifier_base: Name of the base timm model architecture.
             detection_threshold: Minimum confidence for animal detections.
             clas_threshold: Minimum confidence for classification predictions.
-            pred_topn: Number of top classification predictions to return.
             resize_size: Target image size for classification model input.
             force_cpu: If True, use CPU even if CUDA is available.
             skip_clas_errors: If True, skip classification errors instead of raising.
@@ -363,7 +358,6 @@ class DetectAndClassify:
                                                    classifier_base=classifier_base,
                                                    clas_threshold=clas_threshold,
                                                    label_names=label_names,
-                                                   pred_topn=pred_topn,
                                                    resize_size=resize_size,
                                                    force_cpu=force_cpu,
                                                    skip_errors=skip_clas_errors)
@@ -412,6 +406,7 @@ class DetectAndClassify:
         inp: Union[str, Image.Image, List[Union[str, Image.Image]]],
         identifier: Union[str, List[str], None] = None,
         clas_bs: int = 4,
+        topn: int = 1,
         output_name: str = None,
     ) -> List[Tuple]:
         """
@@ -426,11 +421,12 @@ class DetectAndClassify:
             identifier: Optional identifier(s) for tracking results back to
                 source images. If None, uses file paths or timestamps.
             clas_bs: Batch size for classification inference.
+            topn: Number of top classification predictions to return.
             output_name: Optional name for saving results (CSV and Timelapse's JSON) instead of returning it.
         Returns:
             List of result tuples, one per detected animal. Each tuple contains:
             (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold.
+            number of label/prob pairs depends on topn and clas_threshold.
 
             If output_name is provided, results are saved to file, no results returned.
         """
@@ -457,7 +453,7 @@ class DetectAndClassify:
                 if isinstance(item,str):
                     img.close()
 
-        clas_results =  self.clas_inference.predict_batch(md_results, batch_size=clas_bs)
+        clas_results =  self.clas_inference.predict_batch(md_results, pred_topn=topn, batch_size=clas_bs)
         if output_name is None:
             return clas_results
         
