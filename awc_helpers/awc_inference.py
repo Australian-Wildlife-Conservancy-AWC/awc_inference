@@ -413,7 +413,6 @@ class DetectAndClassify:
         identifier: Union[str, List[str], None] = None,
         clas_bs: int = 4,
         output_name: str = None,
-        timelapse_format: bool = False
     ) -> List[Tuple]:
         """
         Run detection and classification on input images.
@@ -427,14 +426,13 @@ class DetectAndClassify:
             identifier: Optional identifier(s) for tracking results back to
                 source images. If None, uses file paths or timestamps.
             clas_bs: Batch size for classification inference.
-            output_name: Optional name for saving results instead of returning it.
-            timelapse_format: If True, formats output for Timelapse program.
+            output_name: Optional name for saving results (CSV and Timelapse's JSON) instead of returning it.
         Returns:
             List of result tuples, one per detected animal. Each tuple contains:
             (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
             number of label/prob pairs depends on pred_topn and clas_threshold.
 
-            If output_name is provided, results are saved to file (csv or timelapse json)
+            If output_name is provided, results are saved to file, no results returned.
         """
         inp, identifier = self._validate_input(inp, identifier)
         if len(inp) == 0:
@@ -458,9 +456,8 @@ class DetectAndClassify:
         clas_results =  self.clas_inference.predict_batch(md_results, batch_size=clas_bs)
         if output_name is None:
             return clas_results
-        if not timelapse_format:
-            output_csv(clas_results, output_name)
         
+        output_csv(clas_results, output_name)
         output_timelapse_json(clas_results, output_name, self.clas_inference.label_names)
     
         

@@ -63,14 +63,15 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
             "bbox": truncate_float_array(list(bbox), precision=4)
         }
         
-        # Extract classification pairs (label_idx, prob) from remaining elements
+        clas2idx = {name: str(i + 1) for i, name in enumerate(label_names)}
+
         classifications = []
         for i in range(3, len(result), 2):
             if i + 1 < len(result):
-                label_idx = result[i]
+                label_str = result[i]
                 prob = result[i + 1]
-                if label_idx is not None and prob is not None:
-                    classifications.append([str(int(label_idx)), truncate_float(prob, precision=3)])
+                if label_str is not None and prob is not None:
+                    classifications.append([clas2idx[label_str], truncate_float(prob, precision=3)])
         
         if classifications:
             detection["classifications"] = classifications
@@ -85,9 +86,7 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
             "detections": detections
         })
     
-    # Build classification categories (1-indexed)
-    classification_categories = {str(i + 1): name for i, name in enumerate(label_names)}
-    
+    idx2clas = {str(i + 1): name for i, name in enumerate(label_names)}
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     # Build output structure
     output = {
