@@ -1,5 +1,7 @@
 """AWC Helpers - Wildlife detection and classification inference tools."""
 
+from importlib.metadata import version
+
 from .awc_inference import (
     DetectAndClassify,
     SpeciesClasInference,
@@ -14,7 +16,7 @@ from .format_utils import (
 )
 from .math_utils import crop_image, pil_to_tensor
 
-__version__ = "0.1.2"
+__version__ = version("awc_helpers")
 
 __all__ = [
     "DetectAndClassify",
