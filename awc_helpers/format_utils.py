@@ -1,5 +1,30 @@
 import csv
-from typing import List, Tuple
+import json
+import math
+from datetime import datetime
+from typing import List, Tuple, Dict, Any
+from collections import OrderedDict
+
+
+def truncate_float(x: float, precision: int = 3) -> float:
+    """
+    Truncates the fractional portion of a floating-point value to a specific number of
+    floating-point digits.
+    Source: https://github.com/agentmorris/MegaDetector/blob/main/megadetector/utils/ct_utils.py
+
+    Args:
+        x (float): scalar to truncate
+        precision (int, optional): the number of significant digits to preserve, should be >= 1
+
+    Returns:
+        float: truncated version of [x]
+    """
+    return math.floor(x * (10 ** precision)) / (10 ** precision)
+
+
+def truncate_float_array(arr: List[float], precision: int = 4) -> List[float]:
+    return [truncate_float(x, precision) for x in arr]
+
 
 def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names: List[str]):
     """
@@ -10,9 +35,83 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
             (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
             number of label/prob pairs depends on pred_topn and clas_threshold.
         json_name: Output JSON file name.
-        label_names: List of all possible label names.
+        label_names: List of all label names.
     """
-    # TODO: Implement JSON output logic here
+    if not json_name.endswith('.json'):
+        json_name += '.json'
+    
+    # Group detections by file using OrderedDict to preserve order
+    images_dict: Dict[str, List[Dict[str, Any]]] = OrderedDict()
+    
+    for result in clas_results:
+        identifier = result[0]
+        bbox_conf = result[1]
+        bbox = result[2]
+        
+        # Initialize file entry if not exists
+        if identifier not in images_dict:
+            images_dict[identifier] = []
+        
+        # If bbox is None or empty, this image has no detections
+        if bbox is None or bbox_conf is None:
+            continue
+        
+        # Build detection object
+        detection = {
+            "category": "1",  # Always "1" for animal
+            "conf": truncate_float(bbox_conf, precision=3),
+            "bbox": truncate_float_array(list(bbox), precision=4)
+        }
+        
+        # Extract classification pairs (label_idx, prob) from remaining elements
+        classifications = []
+        for i in range(3, len(result), 2):
+            if i + 1 < len(result):
+                label_idx = result[i]
+                prob = result[i + 1]
+                if label_idx is not None and prob is not None:
+                    classifications.append([str(int(label_idx)), truncate_float(prob, precision=3)])
+        
+        if classifications:
+            detection["classifications"] = classifications
+        
+        images_dict[identifier].append(detection)
+    
+    # Build images list
+    images = []
+    for file_path, detections in images_dict.items():
+        images.append({
+            "file": file_path,
+            "detections": detections
+        })
+    
+    # Build classification categories (1-indexed)
+    classification_categories = {str(i + 1): name for i, name in enumerate(label_names)}
+    
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Build output structure
+    output = {
+        "images": images,
+        "detection_categories": {
+            "1": "animal",
+            "2": "person",
+            "3": "vehicle"
+        },
+        "info": {
+            "detection_completion_time": current_time,
+            "format_version": "1.4",
+            "detector": "md_v1000.0.0-redwood.pt",
+            "detector_metadata": {
+            "megadetector_version": "1000-redwood"
+            },
+            "python_library": "awc-helpers"
+        },
+        "classification_categories": classification_categories
+    }
+    
+    # Write to file
+    with open(json_name, 'w') as f:
+        json.dump(output, f, indent=1)
 
 def output_csv(clas_results: List[Tuple],csv_name: str):
     """

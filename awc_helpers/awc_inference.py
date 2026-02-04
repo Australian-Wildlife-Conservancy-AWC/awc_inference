@@ -26,7 +26,7 @@ from megadetector.detection import run_detector
 from typing import List, Tuple, Union
 from PIL import Image
 from .math_utils import crop_image, pil_to_tensor
-from .format_utils import output_csv
+from .format_utils import output_csv, output_timelapse_json
 import logging
 
 logger = logging.getLogger(__name__)
