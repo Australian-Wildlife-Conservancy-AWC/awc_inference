@@ -5,7 +5,7 @@ Wildlife species detection and classification inference module.
 
 This module provides classes and functions for running inference pipelines
 that combine MegaDetector-based animal detection with species classification
-using fine-tuned image classification models.
+using fine-tuned image classification models (from timm library).
 
 Classes:
     SpeciesClasInference: Run species classification on pre-detected animal crops.
@@ -48,8 +48,8 @@ def format_md_detections(md_result: dict,
 
     Returns:
         List of formatted detection results. Format depends on `for_clas`:
-        - If for_clas=True: List of (source, bbox) or (PIL, file, bbox) tuples
-        - If for_clas=False: List of [file, category, bbox, confidence] lists
+        - If for_clas=True: List of (img_path, bbox_confidence, bbox) or (PIL, identifier, bbox_confidence, bbox) tuples
+        - If for_clas=False: List of [file, category, bbox_confidence, bbox] lists
     """
     md_animal_id = next((k for k, v in run_detector.DEFAULT_DETECTOR_LABEL_MAP.items() if v == filter_category), None)
     results=[]
@@ -59,11 +59,11 @@ def format_md_detections(md_result: dict,
             if not filter_category or _d['category'] == md_animal_id:
                 if for_clas:
                     if 'PIL' in md_result:
-                        results.append((md_result['PIL'], img_file, tuple(_d['bbox'])))
+                        results.append((md_result['PIL'], img_file, _d['conf'], tuple(_d['bbox'])))
                     else:
-                        results.append((Path(img_file).as_posix(),tuple(_d['bbox'])))
+                        results.append((Path(img_file).as_posix(), _d['conf'], tuple(_d['bbox'])))
                 else:
-                    results.append([Path(img_file).as_posix(),_d['category'],tuple(_d['bbox']),_d['conf']])
+                    results.append([Path(img_file).as_posix(),_d['category'],_d['conf'],tuple(_d['bbox'])])
     return results
 
 def load_classification_model(
@@ -225,6 +225,7 @@ class SpeciesClasInference:
 
     def _format_output(self,
                        identifier: Union[str, None],
+                       bbox_conf: float,
                        bbox_norm: Tuple[float, float, float, float],
                        top_probs: np.ndarray,
                        top_indices: np.ndarray):
@@ -233,14 +234,15 @@ class SpeciesClasInference:
         
         Args:
             identifier: Image path or custom ID
+            bbox_conf: Confidence score of the bounding box
             bbox_norm: Bounding box used
             top_probs: Top-k probabilities (1D array)
             top_indices: Top-k class indices (1D array)
             
         Returns:
-            Tuple: (identifier, bbox, label1, prob1, label2, prob2, ...)
+            Tuple: (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...)
         """
-        result = [identifier, bbox_norm]
+        result = [identifier, bbox_conf, bbox_norm]
         for k in range(len(top_indices)):
             label = self.label_names[top_indices[k]]
             prob = round(float(top_probs[k]), self.prob_round)
@@ -251,14 +253,14 @@ class SpeciesClasInference:
 
     def predict_batch(
         self,
-        inputs: List[Union[Tuple[str, Tuple[float, float, float, float]], Tuple[Image.Image, str, Tuple[float, float, float, float]]]],
-        batch_size: int = 16,
+        inputs: List[Union[Tuple[str, float, Tuple[float, float, float, float]], Tuple[Image.Image, str, float, Tuple[float, float, float, float]]]],
+        batch_size: int = 1,
     ) -> List[Tuple]:
         """
         Run inference on a batch of inputs.
         
         Args:
-            inputs: List of (source, bbox_norm) tuples where source is path, or (PIL Image, id, bbox_norm) tuples for streaming 
+            inputs: List of (img_path, bbox_confidence, bbox) tuples, or (PIL Image, id, bbox_confidence, bbox) tuples for streaming 
             pred_topn: Number of top predictions to return
             prob_round: Decimal places to round probabilities
             batch_size: Number of images to process at once
@@ -273,15 +275,16 @@ class SpeciesClasInference:
             
             # Preprocess batch
             batch_tensors = []
-            batch_metadata = []  # (identifier, bbox)
+            batch_metadata = []  # (identifier, bbox_conf, bbox)
             
             for *sources, bbox in batch_inputs:
                 try:
-                    identifier = sources[0] if len(sources)==1 else sources[1]
+                    identifier = sources[0] if len(sources)==2 else sources[1]
+                    bbox_conf = round(sources[-1], self.prob_round)
                     cropped = self._prepare_crop(sources[0], bbox)
                     tensor = pil_to_tensor(cropped,resize_size=self.resize_size).to(self.device)
                     batch_tensors.append(tensor)
-                    batch_metadata.append((identifier, bbox))
+                    batch_metadata.append((identifier, bbox_conf, bbox))
                 except Exception as e:
                     if self.skip_errors:
                         logger.warning(f"Failed to process {identifier}: {e}")
@@ -295,10 +298,9 @@ class SpeciesClasInference:
             batch_tensor = torch.cat(batch_tensors, dim=0)
             top_probs, top_indices = self._predict(batch_tensor)
             
-            # Build results
-            for i, (identifier, bbox) in enumerate(batch_metadata):
+            for i, (identifier, bbox_conf, bbox) in enumerate(batch_metadata):
                 result = self._format_output(
-                    identifier, bbox,
+                    identifier, bbox_conf, bbox,
                     top_probs[i], top_indices[i],
                 )
                 results.append(result)
@@ -446,6 +448,5 @@ class DetectAndClassify:
             finally:
                 if isinstance(item,str):
                     img.close()
-                    
-        clas_results = self.clas_inference.predict_batch(md_results, batch_size=clas_bs)
-        return clas_results
+
+        return self.clas_inference.predict_batch(md_results, batch_size=clas_bs)

@@ -4,6 +4,26 @@ Wildlife detection and species classification inference tools combining MegaDete
 
 ## Installation
 
+### 1. Install PyTorch
+
+**Windows (with CUDA GPU):**
+```bash
+pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128
+```
+
+**Linux / Mac / CPU:**
+```bash
+pip install torch==2.9.1
+```
+
+### 2. Install AWC Helpers
+
+**From PyPI:**
+```bash
+pip install awc-helpers
+```
+
+**From GitHub:**
 ```bash
 pip install git+https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference.git
 ```

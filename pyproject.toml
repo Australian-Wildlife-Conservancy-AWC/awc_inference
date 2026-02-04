@@ -3,8 +3,8 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "awc_helpers"
-version = "0.1.0"
+name = "awc-helpers"
+version = "0.1.1"
 description = "Australian Wildlife Conservancy's Wildlife detection and species classification inference tools"
 readme = "README.md"
 license = "LicenseRef-CC-BY-NC-SA-4.0"
@@ -12,6 +12,7 @@ requires-python = ">=3.9"
 authors = [
     { name = "Quan Tran" }
 ]
+keywords = ["wildlife", "detection", "classification", "megadetector", "camera-trap", "ecology"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -28,8 +29,10 @@ dependencies = [
     "torch==2.9.1",
     "megadetector<=10.0.17",
     "ultralytics<=8.4.7",
-    "timm<=1.0.24",
+    "timm<=1.0.24"
 ]
 
 [project.urls]
-Homepage = "https://github.com/awc-admin/awc_inference"
+Homepage = "https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference"
+Repository = "https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference"
+Issues = "https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference/issues"
