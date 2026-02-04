@@ -26,6 +26,7 @@ from megadetector.detection import run_detector
 from typing import List, Tuple, Union
 from PIL import Image
 from .math_utils import crop_image, pil_to_tensor
+from .format_utils import output_csv
 import logging
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ class SpeciesClasInference:
         ...     classifier_base='tf_efficientnet_b5.ns_jft_in1k',
         ...     label_names=['cat', 'dog', 'bird']
         ... )
-        >>> results = classifier.predict_batch([(image_path, bbox)])
+        >>> results = classifier.predict_batch([(image_path, bbox_conf,bbox)])
     """
 
     def __init__(self,
@@ -410,7 +411,9 @@ class DetectAndClassify:
         self,
         inp: Union[str, Image.Image, List[Union[str, Image.Image]]],
         identifier: Union[str, List[str], None] = None,
-        clas_bs: int = 4
+        clas_bs: int = 4,
+        output_name: str = None,
+        timelapse_format: bool = False
     ) -> List[Tuple]:
         """
         Run detection and classification on input images.
@@ -424,11 +427,14 @@ class DetectAndClassify:
             identifier: Optional identifier(s) for tracking results back to
                 source images. If None, uses file paths or timestamps.
             clas_bs: Batch size for classification inference.
-
+            output_name: Optional name for saving results instead of returning it.
+            timelapse_format: If True, formats output for Timelapse program.
         Returns:
             List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox, label1, prob1, label2, prob2, ...) where the
+            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
             number of label/prob pairs depends on pred_topn and clas_threshold.
+
+            If output_name is provided, results are saved to file (csv or timelapse json)
         """
         inp, identifier = self._validate_input(inp, identifier)
         if len(inp) == 0:
@@ -449,4 +455,12 @@ class DetectAndClassify:
                 if isinstance(item,str):
                     img.close()
 
-        return self.clas_inference.predict_batch(md_results, batch_size=clas_bs)
+        clas_results =  self.clas_inference.predict_batch(md_results, batch_size=clas_bs)
+        if output_name is None:
+            return clas_results
+        if not timelapse_format:
+            output_csv(clas_results, output_name)
+        
+        output_timelapse_json(clas_results, output_name, self.clas_inference.label_names)
+    
+        

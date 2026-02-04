@@ -39,13 +39,19 @@ pipeline = DetectAndClassify(
 
 # Run inference on image paths
 results = pipeline.predict(
-    inp=["image1.jpg", "image2.jpg"],
+    inp=["path/to/image1.jpg", "path/to/image2.jpg"],
     clas_bs=4
 )
 
-# Results format: [(identifier, bbox, label, confidence), ...]
+# Results format: [(image_path, bbox_confidence, bbox, label, label_confidence), ...]
 for result in results:
     print(result)
+# print example:
+# ("path/to/image1.jpg",
+#  0.804,
+#  (0.2246, 0.5885, 0.0678, 0.1022),
+#  'Acanthagenys rufogularis | Spiny-cheeked Honeyeater',
+#  0.9948)
 ```
 
 ## License
