@@ -442,7 +442,11 @@ class DetectAndClassify:
         for item,id in zip(inp, identifier):
             img = item
             if isinstance(item,str):
-                img = Image.open(item)
+                try:
+                    img = Image.open(item)
+                except Exception as e:
+                    logger.warning(f"Failed to open image {item}: {e}")
+                    continue
             try:
                 md_result = self.md_detector.generate_detections_one_image(img,id,
                                                     detection_threshold=self.detection_threshold)
