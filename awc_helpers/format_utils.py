@@ -105,7 +105,7 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
             },
             "python_library": "awc-helpers"
         },
-        "classification_categories": classification_categories
+        "classification_categories": idx2clas
     }
     
     # Write to file
