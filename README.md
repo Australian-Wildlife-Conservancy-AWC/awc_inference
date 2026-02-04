@@ -23,11 +23,6 @@ pip install torch==2.9.1
 pip install awc-helpers
 ```
 
-**From GitHub:**
-```bash
-pip install git+https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference.git
-```
-
 ## Usage
 
 ```python

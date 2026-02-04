@@ -8,7 +8,7 @@ from .awc_inference import (
 )
 from .math_utils import crop_image, pil_to_tensor
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 __all__ = [
     "DetectAndClassify",
