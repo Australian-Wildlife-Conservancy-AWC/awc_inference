@@ -8,6 +8,7 @@ from collections import OrderedDict
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from PIL import Image
+from importlib.metadata import version
 from .math_utils import bbox_to_pixels, crop_image
 
 def get_all_image_paths(directory):
@@ -59,6 +60,12 @@ def visualize_detections(clas_results: List[Tuple],
     if not clas_results:
         print("No detections to visualize.")
         return None if return_fig else None
+    if isinstance(clas_results,tuple):
+        clas_results = [clas_results]
+
+    # for multiple entry, check whether they belong to the same image
+    if len(set(result[0] for result in clas_results)) > 1:
+        raise ValueError("All results must belong to the same image for visualization.")
     
     img_path = clas_results[0][0]
     img = Image.open(img_path)
@@ -74,8 +81,6 @@ def visualize_detections(clas_results: List[Tuple],
         if common_name and '|' in label:
             label = label.split('|')[-1].strip()
         return f"{label} ({prob:.2f})"
-    
-    
     
     if plot_type == 'full':
         fig, ax = plt.subplots(1, 1, figsize=fig_size)
@@ -96,8 +101,8 @@ def visualize_detections(clas_results: List[Tuple],
             label_text = _get_label_text(result)
             if label_text:
                 ax.text(x, y - 5, label_text, color='lime', fontsize=font_size,
-                        fontweight='bold', backgroundcolor='black',
-                        verticalalignment='bottom')
+                        fontweight='normal', verticalalignment='bottom',
+                        bbox=dict(boxstyle='square,pad=0.1', facecolor='black', edgecolor='none'))
         
         ax.set_title(img_path, fontsize=font_size)
         plt.tight_layout()
@@ -236,6 +241,12 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
     
     idx2clas = {str(i + 1): name for i, name in enumerate(label_names)}
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        ver = version("awc_helpers")
+    except Exception:
+        ver = "unknown"
+        
     # Build output structure
     output = {
         "images": images,
@@ -251,7 +262,7 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
             "detector_metadata": {
             "megadetector_version": "1000-redwood"
             },
-            "python_library": "awc-helpers"
+            "python_library": f"awc-helpers-{ver}"
         },
         "classification_categories": idx2clas
     }

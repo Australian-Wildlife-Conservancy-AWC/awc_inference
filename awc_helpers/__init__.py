@@ -13,6 +13,8 @@ from .format_utils import (
     output_timelapse_json,
     truncate_float,
     truncate_float_array,
+    get_all_image_paths,
+    visualize_detections
 )
 from .math_utils import crop_image, pil_to_tensor
 
@@ -29,4 +31,6 @@ __all__ = [
     "output_timelapse_json",
     "truncate_float",
     "truncate_float_array",
+    "get_all_image_paths",
+    "visualize_detections"
 ]
