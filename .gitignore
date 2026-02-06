@@ -91,6 +91,10 @@ venv.bak/
 *.tiff
 *.tif
 
+# Exception: allow images in documentation
+!images/
+!images/*
+
 # OS files
 .DS_Store
 Thumbs.db
