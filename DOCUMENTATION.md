@@ -56,8 +56,8 @@ DetectAndClassify(
 from awc_helpers import DetectAndClassify
 
 pipeline = DetectAndClassify(
-    detector_path="models/md_v5a.0.0.pt",
-    classifier_path="models/species_classifier.pth",
+    detector_path="models/md_v1000.0.0-redwood.pt",
+    classifier_path="models/awc-135-v1.pth",
     label_names=["kangaroo", "wallaby", "wombat", "echidna"],
     detection_threshold=0.1,
     clas_threshold=0.5,
@@ -190,7 +190,7 @@ SpeciesClasInference(
 from awc_helpers import SpeciesClasInference
 
 classifier = SpeciesClasInference(
-    classifier_path="models/species_classifier.pth",
+    classifier_path="models/awc-135-v1.pth",
     classifier_base="tf_efficientnet_b5.ns_jft_in1k",
     label_names=["kangaroo", "wallaby", "wombat"],
     clas_threshold=0.5,
@@ -241,7 +241,7 @@ Where `bbox` is a normalized bounding box tuple `(x, y, width, height)` with val
 from awc_helpers import SpeciesClasInference
 
 classifier = SpeciesClasInference(
-    classifier_path="models/species_classifier.pth",
+    classifier_path="models/awc-135-v1.pth",
     classifier_base="tf_efficientnet_b5.ns_jft_in1k",
     label_names=["kangaroo", "wallaby", "wombat"],
 )
@@ -358,8 +358,8 @@ from awc_helpers import DetectAndClassify
 from awc_helpers.format_utils import visualize_detections
 
 pipeline = DetectAndClassify(
-    detector_path="models/md_v5a.0.0.pt",
-    classifier_path="models/species_classifier.pth",
+    detector_path="models/md_v1000.0.0-redwood.pt",
+    classifier_path="models/awc-135-v1.pth",
     label_names=["kangaroo", "wallaby", "wombat"],
 )
 

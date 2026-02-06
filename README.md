@@ -30,8 +30,8 @@ from awc_helpers import DetectAndClassify
 
 # Initialize the pipeline
 pipeline = DetectAndClassify(
-    detector_path="path/to/megadetector.pt",
-    classifier_path="path/to/species_classifier.pth",
+    detector_path="models/md_v1000.0.0-redwood.pt",
+    classifier_path="models/awc-135-v1.pth",
     label_names=["species_a", "species_b", "species_c"],
     detection_threshold=0.1,
     clas_threshold=0.5,
