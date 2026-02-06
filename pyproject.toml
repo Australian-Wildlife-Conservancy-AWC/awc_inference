@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "awc_helpers"
-version = "0.1.3"
+version = "0.1.4"
 description = "Australian Wildlife Conservancy's Wildlife detection and species classification inference tools"
 readme = "README.md"
 license = {text = "CC-BY-NC-SA-4.0"}

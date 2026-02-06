@@ -38,6 +38,10 @@ def crop_image(img: Image.Image, bbox_norm: Sequence[float], square_crop: bool =
 
     return crop
 
+def bbox_to_pixels(bbox_norm, img_w, img_h):
+    """Convert normalized bbox [x, y, w, h] to pixel coordinates."""
+    x, y, w, h = bbox_norm
+    return (int(x * img_w), int(y * img_h), int(w * img_w), int(h * img_h))
 
 def pil_to_tensor(img: Image.Image,resize_size=300) -> torch.Tensor:
     """

@@ -25,6 +25,7 @@ from pathlib import Path
 from megadetector.detection import run_detector
 from typing import List, Tuple, Union
 from PIL import Image
+from tqdm import tqdm
 from .math_utils import crop_image, pil_to_tensor
 from .format_utils import output_csv, output_timelapse_json
 import logging
@@ -254,6 +255,7 @@ class SpeciesClasInference:
         inputs: List[Union[Tuple[str, float, Tuple[float, float, float, float]], Tuple[Image.Image, str, float, Tuple[float, float, float, float]]]],
         pred_topn: int = 1,
         batch_size: int = 1,
+        show_progress: bool = False,
     ) -> List[Tuple]:
         """
         Run inference on a batch of inputs.
@@ -262,13 +264,18 @@ class SpeciesClasInference:
             inputs: List of (img_path, bbox_confidence, bbox) tuples, or (PIL Image, id, bbox_confidence, bbox) tuples for streaming 
             pred_topn: Number of top predictions to return
             batch_size: Number of images to process at once
+            show_progress: If True, display a tqdm progress bar
             
         Returns:
             List of result tuples
         """
         results = []
         
-        for batch_start in range(0, len(inputs), batch_size):
+        batch_indices = range(0, len(inputs), batch_size)
+        if show_progress:
+            batch_indices = tqdm(batch_indices, desc="Classification", unit="batch")
+        
+        for batch_start in batch_indices:
             batch_inputs = inputs[batch_start:batch_start + batch_size]
             
             # Preprocess batch
@@ -408,6 +415,7 @@ class DetectAndClassify:
         clas_bs: int = 4,
         topn: int = 1,
         output_name: str = None,
+        show_progress: bool = False,
     ) -> List[Tuple]:
         """
         Run detection and classification on input images.
@@ -423,6 +431,7 @@ class DetectAndClassify:
             clas_bs: Batch size for classification inference.
             topn: Number of top classification predictions to return.
             output_name: Optional name for saving results (CSV and Timelapse's JSON) instead of returning it.
+            show_progress: If True, display tqdm progress bars for detection and classification.
         Returns:
             List of result tuples, one per detected animal. Each tuple contains:
             (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
@@ -435,7 +444,11 @@ class DetectAndClassify:
             return []
         
         md_results=[]
-        for item,id in zip(inp, identifier):
+        items_iter = zip(inp, identifier)
+        if show_progress:
+            items_iter = tqdm(list(items_iter), desc="Detection", unit="img")
+        
+        for item, id in items_iter:
             img = item
             if isinstance(item,str):
                 try:
@@ -453,7 +466,7 @@ class DetectAndClassify:
                 if isinstance(item,str):
                     img.close()
 
-        clas_results =  self.clas_inference.predict_batch(md_results, pred_topn=topn, batch_size=clas_bs)
+        clas_results = self.clas_inference.predict_batch(md_results, pred_topn=topn, batch_size=clas_bs, show_progress=show_progress)
         if output_name is None:
             return clas_results
         

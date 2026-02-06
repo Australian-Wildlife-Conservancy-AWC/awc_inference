@@ -1,9 +1,157 @@
 import csv
 import json
 import math
+import os
 from datetime import datetime
 from typing import List, Tuple, Dict, Any
 from collections import OrderedDict
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from PIL import Image
+from .math_utils import bbox_to_pixels, crop_image
+
+def get_all_image_paths(directory):
+    """
+    Recursively gets all image file paths in a given directory.
+
+    Args:
+    directory (str): The directory to search for image files.
+
+    Returns:
+    list: A list of paths to image files found within the directory and its subdirectories.
+    """
+    image_extensions = {'.jpg', '.jpeg', '.png'}
+    image_paths = []
+
+    def scan_directory(dir_path):
+        with os.scandir(dir_path) as it:
+            for entry in it:
+                if entry.is_file() and any(entry.name.lower().endswith(ext) for ext in image_extensions):
+                    image_paths.append(entry.path)
+                elif entry.is_dir():
+                    scan_directory(entry.path)
+
+    scan_directory(directory)
+    return image_paths
+
+def visualize_detections(clas_results: List[Tuple],
+                         plot_type: str = 'full',
+                         common_name: bool = True,
+                         return_fig: bool = False,
+                         font_size: int = 10,
+                         fig_size: Tuple[int, int] = (12, 8)):
+    """
+    Plot the detections and classifications 
+    
+    Args:
+        clas_results: List of result tuples, one per detected animal. Each tuple contains:
+            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
+            number of label/prob pairs depends on pred_topn and clas_threshold. 
+            The result(s) only belong to one image (with the same path)
+        plot_type: 'full' to plot full image with green bboxes and label+prob, 'crop' to plot a series of cropped animals.
+        common_name: Whether to show common shorter names (True) or full names (False) 
+        return_fig: Whether to return the matplotlib figure object.
+        font_size: Font size for labels and titles.
+        fig_size: Size of the figure when plotting.
+    """
+
+    
+    if not clas_results:
+        print("No detections to visualize.")
+        return None if return_fig else None
+    
+    img_path = clas_results[0][0]
+    img = Image.open(img_path)
+    img_w, img_h = img.size
+    
+    def _get_label_text(result):
+        """Extract label and prob text from result tuple."""
+        if len(result) <= 3:
+            return None
+        # get the first label/prob pair only
+        label = result[3]
+        prob = result[4]
+        if common_name and '|' in label:
+            label = label.split('|')[-1].strip()
+        return f"{label} ({prob:.2f})"
+    
+    
+    
+    if plot_type == 'full':
+        fig, ax = plt.subplots(1, 1, figsize=fig_size)
+        ax.imshow(img)
+        ax.axis('off')
+        
+        for result in clas_results:
+            bbox_norm = result[2]
+            if bbox_norm is None:
+                continue
+            
+            x, y, w, h = bbox_to_pixels(bbox_norm, img_w, img_h)
+            
+            rect = Rectangle((x, y), w, h, linewidth=2, edgecolor='lime', facecolor='none')
+            ax.add_patch(rect)
+            
+            # Add label if available
+            label_text = _get_label_text(result)
+            if label_text:
+                ax.text(x, y - 5, label_text, color='lime', fontsize=font_size,
+                        fontweight='bold', backgroundcolor='black',
+                        verticalalignment='bottom')
+        
+        ax.set_title(img_path, fontsize=font_size)
+        plt.tight_layout()
+        
+    elif plot_type == 'crop':
+        n_crops = len(clas_results)
+        if n_crops == 0:
+            print("No detections to crop.")
+            return None
+        
+        # Calculate grid dimensions
+        n_cols = min(4, n_crops)
+        n_rows = math.ceil(n_crops / n_cols)
+        
+        # Each square crop gets a cell_size x cell_size subplot
+        cell_size = 4  # inches per subplot
+        fig, axes = plt.subplots(n_rows, n_cols, 
+                                 figsize=(cell_size * n_cols, cell_size * n_rows),
+                                 squeeze=False)
+        
+        for idx, result in enumerate(clas_results):
+            row, col = idx // n_cols, idx % n_cols
+            ax = axes[row, col]
+            
+            bbox_norm = result[2]
+            if bbox_norm is None:
+                ax.axis('off')
+                continue
+            
+            crop = crop_image(img, bbox_norm, square_crop=True)
+            
+            ax.imshow(crop)
+            ax.axis('off')
+            
+            label_text = _get_label_text(result)
+            title = label_text if label_text else f"conf: {result[1]:.2f}"
+            ax.set_title(title, fontsize=font_size)
+        
+        # Hide unused subplots
+        for idx in range(n_crops, n_rows * n_cols):
+            row, col = idx // n_cols, idx % n_cols
+            axes[row, col].axis('off')
+        
+        plt.suptitle(img_path, fontsize=font_size)
+        plt.tight_layout()
+    
+    else:
+        raise ValueError(f"Unknown plot_type: {plot_type}. Use 'full' or 'crop'.")
+    
+    if return_fig:
+        return fig
+    
+    plt.show()
+    plt.close(fig)
 
 
 def truncate_float(x: float, precision: int = 3) -> float:
@@ -117,7 +265,7 @@ def output_csv(clas_results: List[Tuple],csv_name: str):
     Convert classification results to CSV format.
     Args:
         clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
+            (img_id, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
             number of label/prob pairs depends on pred_topn and clas_threshold.
         csv_name: Output CSV file name.
     """
