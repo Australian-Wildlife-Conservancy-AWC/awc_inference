@@ -29,6 +29,7 @@ from tqdm import tqdm
 from .math_utils import crop_image, pil_to_tensor
 from .format_utils import output_csv, output_timelapse_json
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -443,6 +444,9 @@ class DetectAndClassify:
         if len(inp) == 0:
             return []
         
+        
+        start_time = time.perf_counter() if show_progress else None
+        
         md_results=[]
         items_iter = zip(inp, identifier)
         if show_progress:
@@ -467,6 +471,13 @@ class DetectAndClassify:
                     img.close()
 
         clas_results = self.clas_inference.predict_batch(md_results, pred_topn=topn, batch_size=clas_bs, show_progress=show_progress)
+        
+        if show_progress:
+            total_time = time.perf_counter() - start_time
+            n_images = len(inp)
+            n_detections = len(md_results)
+            print(f"Pipeline: {n_images} images, {n_detections} detections in {total_time:.2f}s ({n_images/total_time:.2f} img/s)")
+        
         if output_name is None:
             return clas_results
         
