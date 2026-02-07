@@ -11,7 +11,7 @@ Wildlife detection and species classification inference tools combining MegaDete
 pip install "torch<=2.9.1" "torchvision<=0.24.1" --index-url https://download.pytorch.org/whl/cu128
 ```
 
-**Linux / Mac / CPU:**
+**Linux / Mac / Windows with CPU:**
 ```bash
 pip install "torch<=2.9.1" "torchvision<=0.24.1"
 ```
@@ -53,6 +53,9 @@ for result in results:
 #  'Acanthagenys rufogularis | Spiny-cheeked Honeyeater',
 #  0.9948)
 ```
+
+## Documenntation
+Refer to [this](DOCUMENTATION.md) for more details
 
 ## License
 
