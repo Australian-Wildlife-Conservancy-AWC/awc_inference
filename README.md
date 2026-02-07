@@ -8,12 +8,12 @@ Wildlife detection and species classification inference tools combining MegaDete
 
 **Windows (with CUDA GPU):**
 ```bash
-pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128
+pip install "torch<=2.9.1" "torchvision<=0.24.1" --index-url https://download.pytorch.org/whl/cu128
 ```
 
 **Linux / Mac / CPU:**
 ```bash
-pip install torch==2.9.1
+pip install "torch<=2.9.1" "torchvision<=0.24.1"
 ```
 
 ### 2. Install AWC Helpers
