@@ -37,3 +37,6 @@ dependencies = [
 Homepage = "https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference"
 Repository = "https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference"
 Issues = "https://github.com/Australian-Wildlife-Conservancy-AWC/awc_inference/issues"
+
+[tool.setuptools.packages.find]
+include = ["awc_helpers*"]
