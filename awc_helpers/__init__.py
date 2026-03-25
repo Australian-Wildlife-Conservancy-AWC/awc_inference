@@ -7,6 +7,7 @@ from .awc_inference import (
     SpeciesClasInference,
     format_md_detections,
     load_classification_model,
+    AWCResult
 )
 from .format_utils import (
     output_csv,
@@ -14,7 +15,8 @@ from .format_utils import (
     truncate_float,
     truncate_float_array,
     get_all_image_paths,
-    visualize_detections
+    visualize_detections,
+    get_time_identifier
 )
 from .math_utils import crop_image, pil_to_tensor
 
@@ -32,5 +34,7 @@ __all__ = [
     "truncate_float",
     "truncate_float_array",
     "get_all_image_paths",
-    "visualize_detections"
+    "visualize_detections",
+    "AWCResult",
+    "get_time_identifier"
 ]
