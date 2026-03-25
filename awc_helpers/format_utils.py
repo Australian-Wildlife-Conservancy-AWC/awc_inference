@@ -179,16 +179,20 @@ def truncate_float_array(arr: List[float], precision: int = 4) -> List[float]:
     return [truncate_float(x, precision) for x in arr]
 
 
-def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names: List[str]):
+def output_timelapse_json(clas_results: List, json_name: str, label_names: List[str], mdlabel2id: Dict[str, str]):
     """
     Convert classification results to timelapse JSON format.
     
     Args:
-        clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold.
+        clas_results: List of AWCResult objects. Each object contains:
+            - identifier: Image identifier
+            - bbox_conf: Confidence score of the bounding box
+            - bbox: Bounding box coordinates (x1, y1, x2, y2)
+            - bbox_label: Detected category label for the bounding box
+            - labels_probs: Tuple of (label, probability) pairs
         json_name: Output JSON file name.
         label_names: List of all label names.
+        mdlabel2id: Mapping from MegaDetector labels to their corresponding category IDs.
     """
     if not json_name.endswith('.json'):
         json_name += '.json'
@@ -196,22 +200,25 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
     # Group detections by file using OrderedDict to preserve order
     images_dict: Dict[str, List[Dict[str, Any]]] = OrderedDict()
     
+
     for result in clas_results:
-        identifier = result[0]
-        bbox_conf = result[1]
-        bbox = result[2]
+        identifier = result.identifier
+        bbox_conf = result.bbox_conf
+        bbox_label = result.bbox_label
+        bbox = result.bbox
+        labels_probs = result.labels_probs if result.labels_probs is not None else []
         
         # Initialize file entry if not exists
         if identifier not in images_dict:
             images_dict[identifier] = []
         
         # If bbox is None or empty, this image has no detections
-        if bbox is None or bbox_conf is None:
+        if bbox is None or bbox_conf is None or bbox_label is None:
             continue
         
         # Build detection object
         detection = {
-            "category": "1",  # Always "1" for animal
+            "category": mdlabel2id.get(bbox_label, "1"),
             "conf": truncate_float(bbox_conf, precision=3),
             "bbox": truncate_float_array(list(bbox), precision=4)
         }
@@ -219,12 +226,9 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
         clas2idx = {name: str(i + 1) for i, name in enumerate(label_names)}
 
         classifications = []
-        for i in range(3, len(result), 2):
-            if i + 1 < len(result):
-                label_str = result[i]
-                prob = result[i + 1]
-                if label_str is not None and prob is not None:
-                    classifications.append([clas2idx[label_str], truncate_float(prob, precision=3)])
+        for label_str, prob in labels_probs:
+            if label_str is not None and prob is not None:
+                classifications.append([clas2idx[label_str], truncate_float(prob, precision=3)])
         
         if classifications:
             detection["classifications"] = classifications
@@ -271,13 +275,17 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
     with open(json_name, 'w') as f:
         json.dump(output, f, indent=1)
 
-def output_csv(clas_results: List[Tuple],csv_name: str):
+def output_csv(clas_results: List,csv_name: str):
     """
     Convert classification results to CSV format.
     Args:
-        clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (img_id, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold.
+        clas_results: List of AWCResult objects.
+            Each object contains the following attributes:
+            - identifier: Image identifier
+            - bbox_conf: Confidence score of the bounding box
+            - bbox: Bounding box coordinates (x1, y1, x2, y2)
+            - bbox_label: Detected category label for the bounding box
+            - labels_probs: Tuple of (label, probability) pairs
         csv_name: Output CSV file name.
     """
     if not csv_name.endswith('.csv'):
@@ -286,12 +294,12 @@ def output_csv(clas_results: List[Tuple],csv_name: str):
     # Determine the maximum number of label/prob pairs
     max_pairs = 0
     for result in clas_results:
-        num_pairs = (len(result) - 3) // 2
+        num_pairs = len(result.labels_probs) if result.labels_probs is not None else 0
         if num_pairs > max_pairs:
             max_pairs = num_pairs
 
     # Create CSV header
-    header = ['Image Path', 'Bounding Box Confidence', 'Bounding Box Normalized']
+    header = ['Image Path', 'Bounding Box Normalized','Bounding Box Label', 'Bounding Box Confidence']
     for i in range(1, max_pairs + 1):
         header.append(f'Label {i}')
         header.append(f'Confidence {i}')
@@ -301,8 +309,11 @@ def output_csv(clas_results: List[Tuple],csv_name: str):
         writer = csv.writer(csv_file)
         writer.writerow(header)
         for result in clas_results:
-            row = list(result)
+            row = [result.identifier, result.bbox, result.bbox_label, result.bbox_conf]
+            if result.labels_probs is not None:
+                for label, prob in result.labels_probs:
+                    row.extend([label, prob])
             # Pad the row with empty strings if necessary
-            while len(row) < 3 + 2 * max_pairs:
+            while len(row) < len(header):
                 row.append('')
             writer.writerow(row)
