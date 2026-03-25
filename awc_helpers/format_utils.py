@@ -35,7 +35,7 @@ def get_all_image_paths(directory):
     scan_directory(directory)
     return image_paths
 
-def visualize_detections(clas_results: List[Tuple],
+def visualize_detections(clas_results: List,
                          plot_type: str = 'full',
                          common_name: bool = True,
                          return_fig: bool = False,
@@ -45,10 +45,7 @@ def visualize_detections(clas_results: List[Tuple],
     Plot the detections and classifications 
     
     Args:
-        clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold. 
-            The result(s) only belong to one image (with the same path)
+        clas_results: List of AWCResult objects.
         plot_type: 'full' to plot full image with green bboxes and label+prob, 'crop' to plot a series of cropped animals.
         common_name: Whether to show common shorter names (True) or full names (False) 
         return_fig: Whether to return the matplotlib figure object.
@@ -60,24 +57,30 @@ def visualize_detections(clas_results: List[Tuple],
     if not clas_results:
         print("No detections to visualize.")
         return None if return_fig else None
-    if isinstance(clas_results,tuple):
+    if not isinstance(clas_results, list):
         clas_results = [clas_results]
 
     # for multiple entry, check whether they belong to the same image
-    if len(set(result[0] for result in clas_results)) > 1:
+    if len(set(result.identifier for result in clas_results)) > 1:
         raise ValueError("All results must belong to the same image for visualization.")
     
-    img_path = clas_results[0][0]
+    img_path = clas_results[0].identifier
     img = Image.open(img_path)
     img_w, img_h = img.size
     
     def _get_label_text(result):
-        """Extract label and prob text from result tuple."""
-        if len(result) <= 3:
+        """
+        Extract label and prob text from labels_probs tuple. 
+        If labels_probs is empty, fall back to bbox_label and bbox_conf if available.
+        """
+        labels_probs = result.labels_probs
+        if not labels_probs or len(labels_probs) == 0:
+            if result.bbox_label and result.bbox_conf!=0.0:
+                return f"{result.bbox_label} ({result.bbox_conf:.2f})"
             return None
+        
         # get the first label/prob pair only
-        label = result[3]
-        prob = result[4]
+        label, prob = labels_probs[0]
         if common_name and '|' in label:
             label = label.split('|')[-1].strip()
         return f"{label} ({prob:.2f})"
@@ -88,7 +91,7 @@ def visualize_detections(clas_results: List[Tuple],
         ax.axis('off')
         
         for result in clas_results:
-            bbox_norm = result[2]
+            bbox_norm = result.bbox
             if bbox_norm is None:
                 continue
             
@@ -127,7 +130,7 @@ def visualize_detections(clas_results: List[Tuple],
             row, col = idx // n_cols, idx % n_cols
             ax = axes[row, col]
             
-            bbox_norm = result[2]
+            bbox_norm = result.bbox
             if bbox_norm is None:
                 ax.axis('off')
                 continue
@@ -138,8 +141,8 @@ def visualize_detections(clas_results: List[Tuple],
             ax.axis('off')
             
             label_text = _get_label_text(result)
-            title = label_text if label_text else f"conf: {result[1]:.2f}"
-            ax.set_title(title, fontsize=font_size)
+            if label_text:
+                ax.set_title(label_text, fontsize=font_size)
         
         # Hide unused subplots
         for idx in range(n_crops, n_rows * n_cols):
