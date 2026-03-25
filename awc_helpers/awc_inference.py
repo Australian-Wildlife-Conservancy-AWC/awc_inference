@@ -43,6 +43,11 @@ class AWCResult:
     bbox_conf: float = 0.0
     labels_probs: Tuple[Tuple[str, float], Tuple[str, float]] = None  # ((label1, prob1), (label2, prob2))
 
+    def __repr__(self) -> str:
+        return (f"AWCResult(identifier={self.identifier!r}, bbox={self.bbox}, "
+                f"bbox_label={self.bbox_label!r}, bbox_conf={self.bbox_conf}, "
+                f"labels_probs={self.labels_probs})")
+
 def format_md_detections(md_result: dict,
                          filter_category: str = 'animal') -> List:
     """
