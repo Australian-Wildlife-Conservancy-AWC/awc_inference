@@ -43,15 +43,11 @@ results = pipeline.predict(
     clas_bs=4
 )
 
-# Results format: [(image_path, bbox_confidence, bbox, label, label_confidence), ...]
 for result in results:
     print(result)
 # print example:
-# ("path/to/image1.jpg",
-#  0.804,
-#  (0.2246, 0.5885, 0.0678, 0.1022),
-#  'Acanthagenys rufogularis | Spiny-cheeked Honeyeater',
-#  0.9948)
+# AWCResult(identifier='"path/to/image1.jpg"', bbox=(0.1, 0.2, 0.3, 0.4), bbox_label='animal', bbox_conf=0.95, labels_probs=(('kangaroo', 0.87),))
+
 ```
 
 ## Documenntation

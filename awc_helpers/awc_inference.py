@@ -27,7 +27,7 @@ from megadetector.detection import run_detector
 from typing import List, Tuple, Union
 from PIL import Image
 from tqdm import tqdm
-from collections import dequeue
+from collections import deque
 from .math_utils import crop_image, pil_to_tensor
 from .format_utils import output_csv, output_timelapse_json
 import logging
@@ -293,7 +293,7 @@ class SpeciesClasInference:
             else:
                 nontarget_dic[i]=pair
 
-        target_predicted = dequeue()
+        target_predicted = deque()
         
         batch_indices = range(0, len(target_list), batch_size)
         if show_progress:
