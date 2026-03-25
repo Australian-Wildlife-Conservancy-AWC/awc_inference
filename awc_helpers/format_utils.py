@@ -3,6 +3,7 @@ import json
 import math
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import List, Tuple, Dict, Any
 from collections import OrderedDict
 import matplotlib.pyplot as plt
@@ -10,6 +11,12 @@ from matplotlib.patches import Rectangle
 from PIL import Image
 from importlib.metadata import version
 from .math_utils import bbox_to_pixels, crop_image
+
+
+def get_time_identifier():
+    now = datetime.now(ZoneInfo("Australia/Perth"))
+    now_str = now.strftime("%Y%m%d_%H%M%S") + f"_{now.microsecond // 1000:03d}"
+    return now_str
 
 def get_all_image_paths(directory):
     """

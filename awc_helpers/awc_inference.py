@@ -16,8 +16,7 @@ Functions:
     load_classification_model: Load a timm-based classification model.
 """
 
-from zoneinfo import ZoneInfo
-import datetime
+
 from dataclasses import dataclass, replace
 import timm
 import torch
@@ -29,7 +28,7 @@ from PIL import Image
 from tqdm import tqdm
 from collections import deque
 from .math_utils import crop_image, pil_to_tensor
-from .format_utils import output_csv, output_timelapse_json
+from .format_utils import output_csv, output_timelapse_json, get_time_identifier
 import logging
 import time
 
@@ -291,7 +290,7 @@ class SpeciesClasInference:
                 target_idxs.add(i)
                 target_list.append(pair)
             else:
-                nontarget_dic[i]=pair
+                nontarget_dic[i]=pair[-1]
 
         target_predicted = deque()
         
@@ -337,7 +336,6 @@ class SpeciesClasInference:
                 results.append(target_predicted.popleft())
             else:
                 results.append(nontarget_dic[i])
-
 
         return results
     
@@ -427,8 +425,7 @@ class DetectAndClassify:
                 identifier = inp
             else:
                 # identifier based on date+time in human readable format, utc time
-                now = datetime.datetime.now(ZoneInfo("Australia/Perth"))
-                now_str = now.strftime("%Y%m%d_%H%M%S") + f"_{now.microsecond // 1000:03d}"
+                now_str = get_time_identifier()
                 identifier = [now_str] if len(inp) == 1 else [f'{now_str}_{i+1}' for i in range(len(inp))]
 
         elif not isinstance(identifier, (list, tuple)):
