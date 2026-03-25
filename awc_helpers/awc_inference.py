@@ -285,7 +285,7 @@ class SpeciesClasInference:
             List of AWCResult objects with classification results added
         """
         # create target (animal) and non-target list, run classification on target list, then combine results with non-animal list  while keeping the original order
-        nontarget_dic,target_idxs,target_list={},{},[]
+        nontarget_dic,target_idxs,target_list={},set(),[]
         for i,pair in enumerate(inputs):
             if pair[1].bbox_label==filter_category:
                 target_idxs.add(i)
