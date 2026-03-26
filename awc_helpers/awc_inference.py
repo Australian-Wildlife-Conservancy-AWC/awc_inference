@@ -264,12 +264,12 @@ class SpeciesClasInference:
 
     def predict_batch(
         self,
-        inputs: List,
+        inputs: List[Tuple[Union[str, Image.Image], AWCResult]],
         pred_topn: int = 1,
         batch_size: int = 1,
         show_progress: bool = False,
         filter_category: str = 'animal'
-    ) -> List[Tuple]:
+    ) -> List[AWCResult]:
         """
         Run inference on a batch of inputs.
         
@@ -443,7 +443,7 @@ class DetectAndClassify:
         filter_category: str = 'animal',
         output_name: str = None,
         show_progress: bool = False,
-    ) -> List[Tuple]:
+    ) -> List[AWCResult]:
         """
         Run detection and classification on input images.
 
@@ -461,10 +461,7 @@ class DetectAndClassify:
             output_name: Optional name for saving results (CSV and Timelapse's JSON) instead of returning it.
             show_progress: If True, display tqdm progress bars for detection and classification.
         Returns:
-            List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on topn and clas_threshold.
-
+            List of AWCResult objects, one per detection.
             If output_name is provided, results are saved to file, no results returned.
         """
         inp, identifier = self._validate_input(inp, identifier)
