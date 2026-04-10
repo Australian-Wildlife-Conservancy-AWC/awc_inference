@@ -442,6 +442,7 @@ class DetectAndClassify:
         topn: int = 1,
         filter_category: str = 'animal',
         output_name: str = None,
+        output_csv: bool = False,
         show_progress: bool = False,
     ) -> List[AWCResult]:
         """
@@ -459,6 +460,7 @@ class DetectAndClassify:
             topn: Number of top classification predictions to return.
             filter_category: Category to filter detections by (e.g., 'animal'). None or empty to include all detections.
             output_name: Optional name for saving results (CSV and Timelapse's JSON) instead of returning it.
+            output_csv: If True, save results to CSV file with name based on output_name.
             show_progress: If True, display tqdm progress bars for detection and classification.
         Returns:
             List of AWCResult objects, one per detection.
@@ -503,7 +505,8 @@ class DetectAndClassify:
         if output_name is None:
             return clas_results
         
-        output_csv(clas_results, output_name)
+        if output_csv:
+            output_csv(clas_results, output_name)
 
         mdlabel2id = {v:k for k,v in run_detector.DEFAULT_DETECTOR_LABEL_MAP.items()}
         output_timelapse_json(clas_results, output_name, self.clas_inference.label_names, mdlabel2id)

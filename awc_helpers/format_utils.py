@@ -253,7 +253,7 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
         json_dir = os.path.dirname(json_name)
         file_path = os.path.relpath(file_path, start=json_dir)
         file_path = file_path.replace(os.sep, '/')
-        
+
         images.append({
             "file": file_path,
             "detections": detections
@@ -287,9 +287,27 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
         "classification_categories": idx2clas
     }
     
-    # Write to file
-    with open(json_name, 'w') as f:
-        json.dump(output, f, indent=1)
+    if os.path.exists(json_name):
+        with open(json_name, 'r') as f:
+            existing_data = json.load(f)
+        
+        if (existing_data.get("detection_categories") != output["detection_categories"] or
+            existing_data.get("classification_categories") != output["classification_categories"]):
+            # Categories are different, save to a new file with timestamp suffix
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_json_name = f"{os.path.splitext(json_name)[0]}_{timestamp}.json"
+            print(f"Categories differ from existing file. Saving to new file: {new_json_name}")
+            with open(new_json_name, 'w') as f:
+                json.dump(output, f, indent=1)
+        else:
+            # Categories are the same, append images to existing data and save
+            existing_data["images"].extend(output["images"])
+            with open(json_name, 'w') as f:
+                json.dump(existing_data, f, indent=1)
+    else:
+        with open(json_name, 'w') as f:
+            json.dump(output, f, indent=1)
+
 
 def output_csv(clas_results: List,csv_name: str):
     """
@@ -320,10 +338,11 @@ def output_csv(clas_results: List,csv_name: str):
         header.append(f'Label {i}')
         header.append(f'Confidence {i}')
 
-    # Write to CSV
-    with open(csv_name, mode='w', newline='') as csv_file:
+    file_exists = os.path.isfile(csv_name)
+    with open(csv_name, mode='a' if file_exists else 'w', newline='') as csv_file:
         writer = csv.writer(csv_file)
-        writer.writerow(header)
+        if not file_exists:
+            writer.writerow(header)
         for result in clas_results:
             row = [result.identifier, result.bbox, result.bbox_label, result.bbox_conf]
             if result.labels_probs is not None:
