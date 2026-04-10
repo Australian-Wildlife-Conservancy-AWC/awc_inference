@@ -203,6 +203,7 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
         json_name: Output JSON file name.
         label_names: List of all label names.
         mdlabel2id: Mapping from MegaDetector labels to their corresponding category IDs.
+        fix_filepaths: Whether to convert file paths to relative paths for better compatibility with timelapse viewer.
     """
     if not json_name.endswith('.json'):
         json_name += '.json'
@@ -248,6 +249,11 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
     # Build images list
     images = []
     for file_path, detections in images_dict.items():
+        # file_path will be fixed to relative path from json_name if fix_filepaths is True
+        json_dir = os.path.dirname(json_name)
+        file_path = os.path.relpath(file_path, start=json_dir)
+        file_path = file_path.replace(os.sep, '/')
+        
         images.append({
             "file": file_path,
             "detections": detections
