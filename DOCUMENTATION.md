@@ -4,6 +4,7 @@ This document provides detailed technical documentation for the main classes and
 
 ## Table of Contents
 
+- [AWCResult](#awcresult)
 - [DetectAndClassify](#detectandclassify)
   - [Initialization](#detectandclassify-initialization)
   - [predict()](#detectandclassifypredict)
@@ -13,6 +14,64 @@ This document provides detailed technical documentation for the main classes and
 - [Utility Functions](#utility-functions)
   - [get_all_image_paths()](#get_all_image_paths)
   - [visualize_detections()](#visualize_detections)
+
+---
+
+## AWCResult
+
+A frozen dataclass representing a single detection/classification result. Used throughout the library as the standard result container.
+
+```python
+from awc_helpers import AWCResult
+
+@dataclass(frozen=True)
+class AWCResult:
+    identifier: str
+    bbox: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    bbox_label: str = None
+    bbox_conf: float = 0.0
+    labels_probs: Tuple[Tuple[str, float], ...] = None
+```
+
+### Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `identifier` | `str` | Image path or custom identifier |
+| `bbox` | `Tuple[float, float, float, float]` | Normalized bounding box (x, y, width, height) |
+| `bbox_label` | `str` | Detection category label (e.g., 'animal', 'person', 'vehicle') |
+| `bbox_conf` | `float` | Detection confidence score |
+| `labels_probs` | `Tuple[Tuple[str, float], ...]` | Classification results as tuple of (label, probability) pairs |
+
+### Thread Safety
+
+The `frozen=True` setting makes `AWCResult` immutable and safe to pass between threads. To "modify" a result, use `dataclasses.replace()`:
+
+```python
+from dataclasses import replace
+
+original = AWCResult(identifier="image.jpg", bbox_conf=0.95)
+updated = replace(original, labels_probs=(("kangaroo", 0.87),))
+```
+
+### Example
+
+```python
+result = AWCResult(
+    identifier="path/to/image.jpg",
+    bbox=(0.123, 0.456, 0.234, 0.345),
+    bbox_label="animal",
+    bbox_conf=0.9234,
+    labels_probs=(("kangaroo", 0.8721), ("wallaby", 0.0923))
+)
+
+print(result)
+# AWCResult(identifier='path/to/image.jpg', bbox=(0.123, 0.456, 0.234, 0.345), bbox_label='animal', bbox_conf=0.9234, labels_probs=(('kangaroo', 0.8721), ('wallaby', 0.0923)))
+
+# Access attributes
+print(result.identifier)      # 'path/to/image.jpg'
+print(result.labels_probs[0]) # ('kangaroo', 0.8721)
+```
 
 ---
 
@@ -76,9 +135,10 @@ predict(
     identifier: Union[str, List[str], None] = None,
     clas_bs: int = 4,
     topn: int = 1,
+    filter_category: str = 'animal',
     output_name: str = None,
     show_progress: bool = False
-) -> List[Tuple]
+) -> List[AWCResult]
 ```
 
 #### Parameters
@@ -89,25 +149,13 @@ predict(
 | `identifier` | `str`, `List[str]`, or `None` | `None` | Optional identifier(s) for tracking results. If None, uses file paths or timestamps |
 | `clas_bs` | `int` | `4` | Batch size for classification inference |
 | `topn` | `int` | `1` | Number of top classification predictions to return per detection |
+| `filter_category` | `str` | `'animal'` | Category to filter detections by (e.g., 'animal'). None or empty to include all |
 | `output_name` | `str` | `None` | If provided, saves results to CSV and JSON files instead of returning |
 | `show_progress` | `bool` | `False` | If True, display tqdm progress bars |
 
 #### Returns
 
-`List[Tuple]` - List of result tuples, one per detected animal.
-
-Each tuple has the format:
-```
-(identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...)
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `identifier` | `str` | Image path or custom identifier |
-| `bbox_conf` | `float` | Detection confidence score |
-| `bbox` | `Tuple[float, float, float, float]` | Normalized bounding box (x, y, width, height) |
-| `labelN` | `str` | Classification label (up to `topn` pairs) |
-| `probN` | `float` | Classification confidence |
+`List[AWCResult]` - List of `AWCResult` objects, one per detected animal. See [AWCResult](#awcresult) for details.
 
 #### Example
 
@@ -142,10 +190,17 @@ pipeline.predict(
 
 ```python
 [
-    ('path/to/image1.jpg', 0.9234, (0.123, 0.456, 0.234, 0.345), 'kangaroo', 0.8721),
-    ('path/to/image1.jpg', 0.8567, (0.567, 0.234, 0.189, 0.278), 'wallaby', 0.7234),
-    ('path/to/image2.jpg', 0.9012, (0.234, 0.345, 0.156, 0.198), 'wombat', 0.9156),
+    AWCResult(identifier='path/to/image1.jpg', bbox=(0.123, 0.456, 0.234, 0.345), 
+              bbox_label='animal', bbox_conf=0.9234, labels_probs=(('kangaroo', 0.8721),)),
+    AWCResult(identifier='path/to/image1.jpg', bbox=(0.567, 0.234, 0.189, 0.278), 
+              bbox_label='animal', bbox_conf=0.8567, labels_probs=(('wallaby', 0.7234),)),
+    AWCResult(identifier='path/to/image2.jpg', bbox=(0.234, 0.345, 0.156, 0.198), 
+              bbox_label='animal', bbox_conf=0.9012, labels_probs=(('wombat', 0.9156),)),
 ]
+
+# Accessing results
+for result in results:
+    print(f"{result.identifier}: {result.labels_probs[0][0]} ({result.labels_probs[0][1]:.1%})")
 ```
 
 ---
@@ -206,39 +261,36 @@ Run classification inference on a batch of pre-cropped inputs.
 
 ```python
 predict_batch(
-    inputs: List[Union[
-        Tuple[str, float, Tuple[float, float, float, float]],
-        Tuple[Image.Image, str, float, Tuple[float, float, float, float]]
-    ]],
+    inputs: List[Tuple[Union[str, Image.Image], AWCResult]],
     pred_topn: int = 1,
     batch_size: int = 1,
-    show_progress: bool = False
-) -> List[Tuple]
+    show_progress: bool = False,
+    filter_category: str = 'animal'
+) -> List[AWCResult]
 ```
 
 #### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `inputs` | `List[Tuple]` | *required* | List of input tuples (see format below) |
+| `inputs` | `List[Tuple[str \| Image, AWCResult]]` | *required* | List of (image_source, AWCResult) tuples |
 | `pred_topn` | `int` | `1` | Number of top predictions to return per image |
 | `batch_size` | `int` | `1` | Number of images to process at once |
 | `show_progress` | `bool` | `False` | If True, display a tqdm progress bar |
+| `filter_category` | `str` | `'animal'` | Category to filter and classify (e.g., 'animal') |
 
-**Input tuple formats:**
-- From file: `(img_path, bbox_confidence, bbox)`
-- From PIL Image: `(PIL.Image, identifier, bbox_confidence, bbox)`
-
-Where `bbox` is a normalized bounding box tuple `(x, y, width, height)` with values in range [0, 1].
+**Input tuple format:** `(image_source, AWCResult)`
+- `image_source`: Either a file path (`str`) or a PIL Image object
+- `AWCResult`: An AWCResult object containing the bounding box and detection info
 
 #### Returns
 
-`List[Tuple]` - List of result tuples with the same format as `DetectAndClassify.predict()`.
+`List[AWCResult]` - List of `AWCResult` objects with `labels_probs` populated with classification results.
 
 #### Example
 
 ```python
-from awc_helpers import SpeciesClasInference
+from awc_helpers import SpeciesClasInference, AWCResult
 
 classifier = SpeciesClasInference(
     classifier_path="models/awc-135-v1.pth",
@@ -246,10 +298,12 @@ classifier = SpeciesClasInference(
     label_names=["kangaroo", "wallaby", "wombat"],
 )
 
-# Input: list of (image_path, bbox_confidence, bbox) tuples
+# Input: list of (image_source, AWCResult) tuples
 inputs = [
-    ("image1.jpg", 0.95, (0.1, 0.2, 0.3, 0.4)),
-    ("image2.jpg", 0.87, (0.2, 0.3, 0.25, 0.35)),
+    ("image1.jpg", AWCResult(identifier="image1.jpg", bbox=(0.1, 0.2, 0.3, 0.4), 
+                             bbox_label="animal", bbox_conf=0.95)),
+    ("image2.jpg", AWCResult(identifier="image2.jpg", bbox=(0.2, 0.3, 0.25, 0.35), 
+                             bbox_label="animal", bbox_conf=0.87)),
 ]
 
 results = classifier.predict_batch(
@@ -264,8 +318,10 @@ results = classifier.predict_batch(
 
 ```python
 [
-    ('image1.jpg', 0.95, (0.1, 0.2, 0.3, 0.4), 'kangaroo', 0.8234, 'wallaby', 0.1205),
-    ('image2.jpg', 0.87, (0.2, 0.3, 0.25, 0.35), 'wombat', 0.9123),
+    AWCResult(identifier='image1.jpg', bbox=(0.1, 0.2, 0.3, 0.4), bbox_label='animal',
+              bbox_conf=0.95, labels_probs=(('kangaroo', 0.8234), ('wallaby', 0.1205))),
+    AWCResult(identifier='image2.jpg', bbox=(0.2, 0.3, 0.25, 0.35), bbox_label='animal',
+              bbox_conf=0.87, labels_probs=(('wombat', 0.9123),)),
 ]
 ```
 
@@ -326,7 +382,7 @@ Plot detection and classification results on images.
 from awc_helpers.format_utils import visualize_detections
 
 visualize_detections(
-    clas_results: List[Tuple],
+    clas_results: List[AWCResult],
     plot_type: str = 'full',
     common_name: bool = True,
     return_fig: bool = False,
@@ -339,7 +395,7 @@ visualize_detections(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `clas_results` | `List[Tuple]` | *required* | Result tuples from `predict()`. Must all belong to the same image |
+| `clas_results` | `List[AWCResult]` | *required* | AWCResult objects from `predict()`. Must all belong to the same image |
 | `plot_type` | `str` | `'full'` | `'full'` for full image with bboxes, `'crop'` for cropped detections grid |
 | `common_name` | `bool` | `True` | If True and label contains `\|`, show only the part after `\|` |
 | `return_fig` | `bool` | `False` | If True, return the matplotlib figure instead of displaying |
@@ -392,7 +448,7 @@ fig.savefig("detection_results.png", dpi=150, bbox_inches='tight')
 ## Quick Reference
 
 ```python
-from awc_helpers import DetectAndClassify
+from awc_helpers import DetectAndClassify, AWCResult
 from awc_helpers.format_utils import get_all_image_paths, visualize_detections
 
 # Initialize pipeline
@@ -405,11 +461,18 @@ pipeline = DetectAndClassify(
 # Get all images from a folder
 images = get_all_image_paths("/path/to/images")
 
-# Run inference
+# Run inference - returns List[AWCResult]
 results = pipeline.predict(images, show_progress=True)
 
+# Access result attributes
+for result in results:
+    print(f"{result.identifier}: {result.bbox_label} @ {result.bbox_conf:.2f}")
+    if result.labels_probs:
+        label, prob = result.labels_probs[0]
+        print(f"  -> {label} ({prob:.1%})")
+
 # Visualize a single image's results
-single_image_results = [r for r in results if r[0] == images[0]]
+single_image_results = [r for r in results if r.identifier == images[0]]
 visualize_detections(single_image_results, plot_type='full')
 
 # Save results to files

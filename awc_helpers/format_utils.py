@@ -3,6 +3,7 @@ import json
 import math
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import List, Tuple, Dict, Any
 from collections import OrderedDict
 import matplotlib.pyplot as plt
@@ -10,6 +11,12 @@ from matplotlib.patches import Rectangle
 from PIL import Image
 from importlib.metadata import version
 from .math_utils import bbox_to_pixels, crop_image
+
+
+def get_time_identifier():
+    now = datetime.now(ZoneInfo("Australia/Perth"))
+    now_str = now.strftime("%Y%m%d_%H%M%S") + f"_{now.microsecond // 1000:03d}"
+    return now_str
 
 def get_all_image_paths(directory):
     """
@@ -35,7 +42,7 @@ def get_all_image_paths(directory):
     scan_directory(directory)
     return image_paths
 
-def visualize_detections(clas_results: List[Tuple],
+def visualize_detections(clas_results: List,
                          plot_type: str = 'full',
                          common_name: bool = True,
                          return_fig: bool = False,
@@ -45,10 +52,7 @@ def visualize_detections(clas_results: List[Tuple],
     Plot the detections and classifications 
     
     Args:
-        clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold. 
-            The result(s) only belong to one image (with the same path)
+        clas_results: List of AWCResult objects.
         plot_type: 'full' to plot full image with green bboxes and label+prob, 'crop' to plot a series of cropped animals.
         common_name: Whether to show common shorter names (True) or full names (False) 
         return_fig: Whether to return the matplotlib figure object.
@@ -60,24 +64,30 @@ def visualize_detections(clas_results: List[Tuple],
     if not clas_results:
         print("No detections to visualize.")
         return None if return_fig else None
-    if isinstance(clas_results,tuple):
+    if not isinstance(clas_results, list):
         clas_results = [clas_results]
 
     # for multiple entry, check whether they belong to the same image
-    if len(set(result[0] for result in clas_results)) > 1:
+    if len(set(result.identifier for result in clas_results)) > 1:
         raise ValueError("All results must belong to the same image for visualization.")
     
-    img_path = clas_results[0][0]
+    img_path = clas_results[0].identifier
     img = Image.open(img_path)
     img_w, img_h = img.size
     
     def _get_label_text(result):
-        """Extract label and prob text from result tuple."""
-        if len(result) <= 3:
+        """
+        Extract label and prob text from labels_probs tuple. 
+        If labels_probs is empty, fall back to bbox_label and bbox_conf if available.
+        """
+        labels_probs = result.labels_probs
+        if not labels_probs or len(labels_probs) == 0:
+            if result.bbox_label and result.bbox_conf!=0.0:
+                return f"{result.bbox_label} ({result.bbox_conf:.2f})"
             return None
+        
         # get the first label/prob pair only
-        label = result[3]
-        prob = result[4]
+        label, prob = labels_probs[0]
         if common_name and '|' in label:
             label = label.split('|')[-1].strip()
         return f"{label} ({prob:.2f})"
@@ -88,7 +98,7 @@ def visualize_detections(clas_results: List[Tuple],
         ax.axis('off')
         
         for result in clas_results:
-            bbox_norm = result[2]
+            bbox_norm = result.bbox
             if bbox_norm is None:
                 continue
             
@@ -127,7 +137,7 @@ def visualize_detections(clas_results: List[Tuple],
             row, col = idx // n_cols, idx % n_cols
             ax = axes[row, col]
             
-            bbox_norm = result[2]
+            bbox_norm = result.bbox
             if bbox_norm is None:
                 ax.axis('off')
                 continue
@@ -138,8 +148,8 @@ def visualize_detections(clas_results: List[Tuple],
             ax.axis('off')
             
             label_text = _get_label_text(result)
-            title = label_text if label_text else f"conf: {result[1]:.2f}"
-            ax.set_title(title, fontsize=font_size)
+            if label_text:
+                ax.set_title(label_text, fontsize=font_size)
         
         # Hide unused subplots
         for idx in range(n_crops, n_rows * n_cols):
@@ -179,16 +189,21 @@ def truncate_float_array(arr: List[float], precision: int = 4) -> List[float]:
     return [truncate_float(x, precision) for x in arr]
 
 
-def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names: List[str]):
+def output_timelapse_json(clas_results: List, json_name: str, label_names: List[str], mdlabel2id: Dict[str, str]):
     """
     Convert classification results to timelapse JSON format.
     
     Args:
-        clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold.
+        clas_results: List of AWCResult objects. Each object contains:
+            - identifier: Image identifier
+            - bbox_conf: Confidence score of the bounding box
+            - bbox: Bounding box coordinates (x1, y1, x2, y2)
+            - bbox_label: Detected category label for the bounding box
+            - labels_probs: Tuple of (label, probability) pairs
         json_name: Output JSON file name.
         label_names: List of all label names.
+        mdlabel2id: Mapping from MegaDetector labels to their corresponding category IDs.
+        fix_filepaths: Whether to convert file paths to relative paths for better compatibility with timelapse viewer.
     """
     if not json_name.endswith('.json'):
         json_name += '.json'
@@ -196,22 +211,25 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
     # Group detections by file using OrderedDict to preserve order
     images_dict: Dict[str, List[Dict[str, Any]]] = OrderedDict()
     
+
     for result in clas_results:
-        identifier = result[0]
-        bbox_conf = result[1]
-        bbox = result[2]
+        identifier = result.identifier
+        bbox_conf = result.bbox_conf
+        bbox_label = result.bbox_label
+        bbox = result.bbox
+        labels_probs = result.labels_probs if result.labels_probs is not None else []
         
         # Initialize file entry if not exists
         if identifier not in images_dict:
             images_dict[identifier] = []
         
         # If bbox is None or empty, this image has no detections
-        if bbox is None or bbox_conf is None:
+        if bbox is None or bbox_conf is None or bbox_label is None:
             continue
         
         # Build detection object
         detection = {
-            "category": "1",  # Always "1" for animal
+            "category": mdlabel2id.get(bbox_label, "1"),
             "conf": truncate_float(bbox_conf, precision=3),
             "bbox": truncate_float_array(list(bbox), precision=4)
         }
@@ -219,12 +237,9 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
         clas2idx = {name: str(i + 1) for i, name in enumerate(label_names)}
 
         classifications = []
-        for i in range(3, len(result), 2):
-            if i + 1 < len(result):
-                label_str = result[i]
-                prob = result[i + 1]
-                if label_str is not None and prob is not None:
-                    classifications.append([clas2idx[label_str], truncate_float(prob, precision=3)])
+        for label_str, prob in labels_probs:
+            if label_str is not None and prob is not None:
+                classifications.append([clas2idx[label_str], truncate_float(prob, precision=3)])
         
         if classifications:
             detection["classifications"] = classifications
@@ -234,6 +249,11 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
     # Build images list
     images = []
     for file_path, detections in images_dict.items():
+        # file_path will be fixed to relative path from json_name if fix_filepaths is True
+        json_dir = os.path.dirname(json_name)
+        file_path = os.path.relpath(file_path, start=json_dir)
+        file_path = file_path.replace(os.sep, '/')
+
         images.append({
             "file": file_path,
             "detections": detections
@@ -267,17 +287,39 @@ def output_timelapse_json(clas_results: List[Tuple], json_name: str, label_names
         "classification_categories": idx2clas
     }
     
-    # Write to file
-    with open(json_name, 'w') as f:
-        json.dump(output, f, indent=1)
+    if os.path.exists(json_name):
+        with open(json_name, 'r') as f:
+            existing_data = json.load(f)
+        
+        if (existing_data.get("detection_categories") != output["detection_categories"] or
+            existing_data.get("classification_categories") != output["classification_categories"]):
+            # Categories are different, save to a new file with timestamp suffix
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_json_name = f"{os.path.splitext(json_name)[0]}_{timestamp}.json"
+            print(f"Categories differ from existing file. Saving to new file: {new_json_name}")
+            with open(new_json_name, 'w') as f:
+                json.dump(output, f, indent=1)
+        else:
+            # Categories are the same, append images to existing data and save
+            existing_data["images"].extend(output["images"])
+            with open(json_name, 'w') as f:
+                json.dump(existing_data, f, indent=1)
+    else:
+        with open(json_name, 'w') as f:
+            json.dump(output, f, indent=1)
 
-def output_csv(clas_results: List[Tuple],csv_name: str):
+
+def output_csv(clas_results: List,csv_name: str):
     """
     Convert classification results to CSV format.
     Args:
-        clas_results: List of result tuples, one per detected animal. Each tuple contains:
-            (img_id, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on pred_topn and clas_threshold.
+        clas_results: List of AWCResult objects.
+            Each object contains the following attributes:
+            - identifier: Image identifier
+            - bbox_conf: Confidence score of the bounding box
+            - bbox: Bounding box coordinates (x1, y1, x2, y2)
+            - bbox_label: Detected category label for the bounding box
+            - labels_probs: Tuple of (label, probability) pairs
         csv_name: Output CSV file name.
     """
     if not csv_name.endswith('.csv'):
@@ -286,23 +328,27 @@ def output_csv(clas_results: List[Tuple],csv_name: str):
     # Determine the maximum number of label/prob pairs
     max_pairs = 0
     for result in clas_results:
-        num_pairs = (len(result) - 3) // 2
+        num_pairs = len(result.labels_probs) if result.labels_probs is not None else 0
         if num_pairs > max_pairs:
             max_pairs = num_pairs
 
     # Create CSV header
-    header = ['Image Path', 'Bounding Box Confidence', 'Bounding Box Normalized']
+    header = ['Image Path', 'Bounding Box Normalized','Bounding Box Label', 'Bounding Box Confidence']
     for i in range(1, max_pairs + 1):
         header.append(f'Label {i}')
         header.append(f'Confidence {i}')
 
-    # Write to CSV
-    with open(csv_name, mode='w', newline='') as csv_file:
+    file_exists = os.path.isfile(csv_name)
+    with open(csv_name, mode='a' if file_exists else 'w', newline='') as csv_file:
         writer = csv.writer(csv_file)
-        writer.writerow(header)
+        if not file_exists:
+            writer.writerow(header)
         for result in clas_results:
-            row = list(result)
+            row = [result.identifier, result.bbox, result.bbox_label, result.bbox_conf]
+            if result.labels_probs is not None:
+                for label, prob in result.labels_probs:
+                    row.extend([label, prob])
             # Pad the row with empty strings if necessary
-            while len(row) < 3 + 2 * max_pairs:
+            while len(row) < len(header):
                 row.append('')
             writer.writerow(row)

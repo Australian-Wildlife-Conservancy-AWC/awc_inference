@@ -16,8 +16,8 @@ Functions:
     load_classification_model: Load a timm-based classification model.
 """
 
-from zoneinfo import ZoneInfo
-import datetime
+
+from dataclasses import dataclass, replace
 import timm
 import torch
 import numpy as np
@@ -26,18 +26,29 @@ from megadetector.detection import run_detector
 from typing import List, Tuple, Union
 from PIL import Image
 from tqdm import tqdm
+from collections import deque
 from .math_utils import crop_image, pil_to_tensor
-from .format_utils import output_csv, output_timelapse_json
+from .format_utils import output_csv, output_timelapse_json, get_time_identifier
 import logging
 import time
 
 logger = logging.getLogger(__name__)
 
+@dataclass(frozen=True)
+class AWCResult:
+    identifier: str
+    bbox: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # (x1, y1, x2, y2)
+    bbox_label: str = None
+    bbox_conf: float = 0.0
+    labels_probs: Tuple[Tuple[str, float], Tuple[str, float]] = None  # ((label1, prob1), (label2, prob2))
 
+    def __repr__(self) -> str:
+        return (f"AWCResult(identifier={self.identifier!r}, bbox={self.bbox}, "
+                f"bbox_label={self.bbox_label!r}, bbox_conf={self.bbox_conf}, "
+                f"labels_probs={self.labels_probs})")
 
 def format_md_detections(md_result: dict,
-                         filter_category: str = 'animal',
-                         for_clas: bool = True) -> List:
+                         filter_category: str = 'animal') -> List:
     """
     Format MegaDetector outputs for classification input or other uses.
 
@@ -46,13 +57,9 @@ def format_md_detections(md_result: dict,
             'file', 'detections', and optionally 'PIL' for in-memory images.
         filter_category: Category to filter detections by (e.g., 'animal', 'person').
             If None or empty, all detections are included.
-        for_clas: If True, format output for classification pipeline input.
-            Otherwise, format output with full detection metadata.
 
     Returns:
-        List of formatted detection results. Format depends on `for_clas`:
-        - If for_clas=True: List of (img_path, bbox_confidence, bbox) or (PIL, identifier, bbox_confidence, bbox) tuples
-        - If for_clas=False: List of [file, category, bbox_confidence, bbox] lists
+        List of formatted detection results, of tuples (PIL Image | str, AWCResult)
     """
     md_animal_id = next((k for k, v in run_detector.DEFAULT_DETECTOR_LABEL_MAP.items() if v == filter_category), None)
     results=[]
@@ -60,13 +67,20 @@ def format_md_detections(md_result: dict,
     if 'detections' in md_result and md_result['detections'] is not None and len(md_result['detections'])>0:
         for i,_d in enumerate(md_result['detections']):
             if not filter_category or _d['category'] == md_animal_id:
-                if for_clas:
-                    if 'PIL' in md_result:
-                        results.append((md_result['PIL'], img_file, _d['conf'], tuple(_d['bbox'])))
-                    else:
-                        results.append((Path(img_file).as_posix(), _d['conf'], tuple(_d['bbox'])))
+                _bbox_conf = _d['conf']
+                _bbox = tuple(_d['bbox'])
+                _bbox_label = run_detector.DEFAULT_DETECTOR_LABEL_MAP.get(_d['category'], str(_d['category']))
+                if 'PIL' in md_result:
+                    _img = md_result['PIL']
+                    _identifier = img_file
                 else:
-                    results.append([Path(img_file).as_posix(),_d['category'],_d['conf'],tuple(_d['bbox'])])
+                    _identifier = Path(img_file).as_posix()
+                    _img = _identifier
+                
+                results.append((_img, AWCResult(identifier=_identifier,
+                                                bbox_conf=_bbox_conf,
+                                                bbox=_bbox,
+                                                bbox_label=_bbox_label)))
     return results
 
 def load_classification_model(
@@ -224,76 +238,83 @@ class SpeciesClasInference:
                     top_indices.cpu().numpy())    
 
     def _format_output(self,
-                       identifier: Union[str, None],
-                       bbox_conf: float,
-                       bbox_norm: Tuple[float, float, float, float],
+                       inp: AWCResult,
                        top_probs: np.ndarray,
                        top_indices: np.ndarray):
         """
         Build output result tuple from predictions.
         
         Args:
-            identifier: Image path or custom ID
-            bbox_conf: Confidence score of the bounding box
-            bbox_norm: Bounding box used
+            inp: AWCResult object
             top_probs: Top-k probabilities (1D array)
             top_indices: Top-k class indices (1D array)
             
         Returns:
-            Tuple: (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...)
+            AWCResult object with classification results added to labels_probs field.
         """
-        result = [identifier, bbox_conf, bbox_norm]
+        bbox_conf = round(inp.bbox_conf, self.prob_round)
+        labels_probs=[]
         for k in range(len(top_indices)):
             label = self.label_names[top_indices[k]]
             prob = round(float(top_probs[k]), self.prob_round)
             if prob >= self.clas_threshold:
-                result.extend([label, prob])
-            
-        return tuple(result)
+                labels_probs.append((label, prob))
+        
+        return replace(inp, bbox_conf=bbox_conf, labels_probs=tuple(labels_probs))
 
     def predict_batch(
         self,
-        inputs: List[Union[Tuple[str, float, Tuple[float, float, float, float]], Tuple[Image.Image, str, float, Tuple[float, float, float, float]]]],
+        inputs: List[Tuple[Union[str, Image.Image], AWCResult]],
         pred_topn: int = 1,
         batch_size: int = 1,
         show_progress: bool = False,
-    ) -> List[Tuple]:
+        filter_category: str = 'animal'
+    ) -> List[AWCResult]:
         """
         Run inference on a batch of inputs.
         
         Args:
-            inputs: List of (img_path, bbox_confidence, bbox) tuples, or (PIL Image, id, bbox_confidence, bbox) tuples for streaming 
+            inputs: List of tuple (PIL Image | str, AWCResult) 
             pred_topn: Number of top predictions to return
             batch_size: Number of images to process at once
             show_progress: If True, display a tqdm progress bar
+            filter_category: Category to filter detections by (e.g., 'animal')
             
         Returns:
-            List of result tuples
+            List of AWCResult objects with classification results added
         """
-        results = []
+        # create target (animal) and non-target list, run classification on target list, then combine results with non-animal list  while keeping the original order
+        nontarget_dic,target_idxs,target_list={},set(),[]
+        for i,pair in enumerate(inputs):
+            if pair[1].bbox_label==filter_category:
+                target_idxs.add(i)
+                target_list.append(pair)
+            else:
+                nontarget_dic[i]=pair[-1]
+
+        target_predicted = deque()
         
-        batch_indices = range(0, len(inputs), batch_size)
+        batch_indices = range(0, len(target_list), batch_size)
         if show_progress:
             batch_indices = tqdm(batch_indices, desc="Classification", unit="batch")
         
         for batch_start in batch_indices:
-            batch_inputs = inputs[batch_start:batch_start + batch_size]
+            batch_inputs = target_list[batch_start:batch_start + batch_size]
             
             # Preprocess batch
             batch_tensors = []
-            batch_metadata = []  # (identifier, bbox_conf, bbox)
+            batch_metadata = []
             
-            for *sources, bbox in batch_inputs:
+            for img,result in batch_inputs:
                 try:
-                    identifier = sources[0] if len(sources)==2 else sources[1]
-                    bbox_conf = round(sources[-1], self.prob_round)
-                    cropped = self._prepare_crop(sources[0], bbox)
+                    cropped = self._prepare_crop(img, result.bbox)
                     tensor = pil_to_tensor(cropped,resize_size=self.resize_size).to(self.device)
                     batch_tensors.append(tensor)
-                    batch_metadata.append((identifier, bbox_conf, bbox))
+                    batch_metadata.append(result)
                 except Exception as e:
                     if self.skip_errors:
-                        logger.warning(f"Failed to process {identifier}: {e}")
+                        logger.warning(f"Failed to process {result.identifier}: {e}")
+                        batch_metadata.append(result)
                         continue
                     raise
             
@@ -304,13 +325,18 @@ class SpeciesClasInference:
             batch_tensor = torch.cat(batch_tensors, dim=0)
             top_probs, top_indices = self._predict(batch_tensor, pred_topn=pred_topn)
             
-            for i, (identifier, bbox_conf, bbox) in enumerate(batch_metadata):
-                result = self._format_output(
-                    identifier, bbox_conf, bbox,
-                    top_probs[i], top_indices[i],
-                )
-                results.append(result)
+            for i, result in enumerate(batch_metadata):
+                formatted_result = self._format_output(result,top_probs[i], top_indices[i])
+                target_predicted.append(formatted_result)
         
+        # Combine target and non-target results while preserving original order
+        results = []
+        for i in range(len(inputs)):
+            if i in target_idxs:
+                results.append(target_predicted.popleft())
+            else:
+                results.append(nontarget_dic[i])
+
         return results
     
 
@@ -399,8 +425,7 @@ class DetectAndClassify:
                 identifier = inp
             else:
                 # identifier based on date+time in human readable format, utc time
-                now = datetime.datetime.now(ZoneInfo("Australia/Perth"))
-                now_str = now.strftime("%Y%m%d_%H%M%S") + f"_{now.microsecond // 1000:03d}"
+                now_str = get_time_identifier()
                 identifier = [now_str] if len(inp) == 1 else [f'{now_str}_{i+1}' for i in range(len(inp))]
 
         elif not isinstance(identifier, (list, tuple)):
@@ -415,9 +440,11 @@ class DetectAndClassify:
         identifier: Union[str, List[str], None] = None,
         clas_bs: int = 4,
         topn: int = 1,
+        filter_category: str = 'animal',
         output_name: str = None,
+        output_csv: bool = False,
         show_progress: bool = False,
-    ) -> List[Tuple]:
+    ) -> List[AWCResult]:
         """
         Run detection and classification on input images.
 
@@ -431,22 +458,19 @@ class DetectAndClassify:
                 source images. If None, uses file paths or timestamps.
             clas_bs: Batch size for classification inference.
             topn: Number of top classification predictions to return.
+            filter_category: Category to filter detections by (e.g., 'animal'). None or empty to include all detections.
             output_name: Optional name for saving results (CSV and Timelapse's JSON) instead of returning it.
+            output_csv: If True, save results to CSV file with name based on output_name.
             show_progress: If True, display tqdm progress bars for detection and classification.
         Returns:
-            List of result tuples, one per detected animal. Each tuple contains:
-            (identifier, bbox_conf, bbox, label1, prob1, label2, prob2, ...) where the
-            number of label/prob pairs depends on topn and clas_threshold.
-
+            List of AWCResult objects, one per detection.
             If output_name is provided, results are saved to file, no results returned.
         """
         inp, identifier = self._validate_input(inp, identifier)
         if len(inp) == 0:
             return []
         
-        
         start_time = time.perf_counter() if show_progress else None
-        
         md_results=[]
         items_iter = zip(inp, identifier)
         if show_progress:
@@ -465,7 +489,7 @@ class DetectAndClassify:
                                                     detection_threshold=self.detection_threshold)
                 if not isinstance(item,str):
                     md_result['PIL'] = img
-                md_results.extend(format_md_detections(md_result))
+                md_results.extend(format_md_detections(md_result,filter_category=filter_category))
             finally:
                 if isinstance(item,str):
                     img.close()
@@ -481,7 +505,10 @@ class DetectAndClassify:
         if output_name is None:
             return clas_results
         
-        output_csv(clas_results, output_name)
-        output_timelapse_json(clas_results, output_name, self.clas_inference.label_names)
+        if output_csv:
+            output_csv(clas_results, output_name)
+
+        mdlabel2id = {v:k for k,v in run_detector.DEFAULT_DETECTOR_LABEL_MAP.items()}
+        output_timelapse_json(clas_results, output_name, self.clas_inference.label_names, mdlabel2id)
     
         
