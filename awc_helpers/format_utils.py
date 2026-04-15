@@ -189,7 +189,7 @@ def truncate_float_array(arr: List[float], precision: int = 4) -> List[float]:
     return [truncate_float(x, precision) for x in arr]
 
 
-def output_timelapse_json(clas_results: List, json_name: str, label_names: List[str], mdlabel2id: Dict[str, str]):
+def output_timelapse_json(clas_results: List, json_name: str, label_names: List[str], mdlabel2id: Dict[str, str], overwrite: bool = False):
     """
     Convert classification results to timelapse JSON format.
     
@@ -203,7 +203,7 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
         json_name: Output JSON file name.
         label_names: List of all label names.
         mdlabel2id: Mapping from MegaDetector labels to their corresponding category IDs.
-        fix_filepaths: Whether to convert file paths to relative paths for better compatibility with timelapse viewer.
+        overwrite: Whether to overwrite existing JSON file or create a new one with timestamp suffix if categories differ.
     """
     if not json_name.endswith('.json'):
         json_name += '.json'
@@ -249,7 +249,6 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
     # Build images list
     images = []
     for file_path, detections in images_dict.items():
-        # file_path will be fixed to relative path from json_name if fix_filepaths is True
         json_dir = os.path.dirname(json_name)
         file_path = os.path.relpath(file_path, start=json_dir)
         file_path = file_path.replace(os.sep, '/')
@@ -287,7 +286,16 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
         "classification_categories": idx2clas
     }
     
-    if os.path.exists(json_name):
+    if not os.path.exists(json_name):
+        # File does not exist, create new file
+        with open(json_name, 'w') as f:
+            json.dump(output, f, indent=1)
+    elif overwrite:
+        # Overwrite mode: replace all contents with new output
+        with open(json_name, 'w') as f:
+            json.dump(output, f, indent=1)
+    else:
+        # File exists and overwrite is False: check categories and merge
         with open(json_name, 'r') as f:
             existing_data = json.load(f)
         
@@ -300,13 +308,21 @@ def output_timelapse_json(clas_results: List, json_name: str, label_names: List[
             with open(new_json_name, 'w') as f:
                 json.dump(output, f, indent=1)
         else:
-            # Categories are the same, append images to existing data and save
-            existing_data["images"].extend(output["images"])
+            # Categories match: merge results
+            # Build a lookup dict for existing images by file path
+            existing_files = {img["file"]: idx for idx, img in enumerate(existing_data["images"])}
+            
+            for new_img in output["images"]:
+                file_path = new_img["file"]
+                if file_path in existing_files:
+                    # Replace existing entry
+                    existing_data["images"][existing_files[file_path]] = new_img
+                else:
+                    # Append new entry
+                    existing_data["images"].append(new_img)
+            
             with open(json_name, 'w') as f:
                 json.dump(existing_data, f, indent=1)
-    else:
-        with open(json_name, 'w') as f:
-            json.dump(output, f, indent=1)
 
 
 def output_csv(clas_results: List,csv_name: str):
